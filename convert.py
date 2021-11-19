@@ -19,7 +19,7 @@ transformer1 = Transformer.from_crs("epsg:4326", "epsg:3857")
 transformer2 = Transformer.from_crs("epsg:3857", "epsg:4326")
 
 
-def to_WSG(x, y):
+def to_wsg(x, y):
     return transformer2.transform(y, x)
 
 
