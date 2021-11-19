@@ -27,9 +27,20 @@ def to_3587(lon, lat):
     return transformer1.transform(lon, lat)
 
 
-# wsg = to_WSG(110626.2880, 909126.0155)
-# m = to_3587(*wsg)
-#
-# print(wsg)
-# print(m)
-# print(to_3587(49.2064636, 16.6085294))
+def mercator_to_tile(x, y, zoom):
+    """
+    Converts spherical web mercator to tile pixel X/Y, inverts y coordinates.
+    https://gis.stackexchange.com/a/153851
+    :param x:
+    :param y:
+    :param zoom:
+    :return: point in EPSG:3857
+    """
+    equator = 40075016.68557849
+    tile_x = int((x + (equator / 2.0)) // (equator / pow(2, zoom)))
+    tile_y = int(((y - (equator / 2.0)) // (equator / -pow(2, zoom))))
+    return tile_x, tile_y
+
+
+def wsg_to_tile(lon, lat, zoom):
+    return mercator_to_tile(*to_3587(lon, lat), zoom)
