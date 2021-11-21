@@ -36,7 +36,7 @@ def mercator_to_tile(x, y, zoom):
     :param zoom:
     :return: point in EPSG:3857
     """
-    equator = 40075016.68557849
+    equator = 40075017
     tile_x = int((x + (equator / 2.0)) // (equator / pow(2, zoom)))
     tile_y = int(((y - (equator / 2.0)) // (equator / -pow(2, zoom))))
     return tile_x, tile_y
