@@ -1,10 +1,15 @@
+import colors
 import tomtom_pb2
 import sys
 from google.protobuf.json_format import MessageToDict
 from enum import IntEnum
 from PIL import Image, ImageDraw
+from collections import Counter
 
+import vars
 from vector_math import weighted_distance_sum
+import convert
+import matplotlib.pyplot as plt
 
 
 def get_feature_properties(layer, feature):
@@ -124,13 +129,14 @@ if __name__ == '__main__':
     # https://developer.tomtom.com/traffic-api/traffic-api-documentation/vector-tile-structure#decoding-tags
     traffic_flow_layer = tile_dict["layers"][0]
     geometries = []
+    road_types = Counter()
     img = Image.new("RGB", (4096, 4096))
     img1 = ImageDraw.Draw(img)
     assert traffic_flow_layer["name"] == "Traffic flow"
 
 
     def weight(dist):
-        radius = 2048  # TODO calculate from meters
+        radius = convert.meters_to_pixels(vars.RADIUS, vars.ZOOM)
         if dist == 0:
             return 2
         window = 1 - min(dist / radius, 1)
@@ -138,12 +144,28 @@ if __name__ == '__main__':
         return window * w
 
 
+    lon, lat = vars.CURRENT_STATION
+    station = convert.wsg_to_tile(lon, lat, vars.ZOOM)[2]
+    print(station)
+    # exit(0)
     s_max = 0
+    s_list = []
+    wds_list = []
+    traffic_levels = []
+    traffic_sum = 0
+    segment_count = 0
     for feature in traffic_flow_layer["features"]:
         assert feature["type"] == 'LINESTRING'
         properties = get_feature_properties(traffic_flow_layer, feature)
+
+        road_type = properties[0][1]["stringValue"]
+        road_types[road_type] += 1
+
+        assert properties[1][0] == 'traffic_level'
+        traffic_level = 1 - properties[1][1]["doubleValue"]
+        traffic_levels.append(traffic_level)
+
         geometry = list(parse_geometry(feature["geometry"]))
-        station = (2048, 2048)
         for shape in geometry:
 
             # split line into line segments
@@ -153,15 +175,35 @@ if __name__ == '__main__':
 
             for segment in segments:
                 w_d_s = weighted_distance_sum(station, segment[0], segment[1], weight)
-                s = w_d_s * 1500
-                s_max = max(s, s_max)
-                s = int(min(s, 1) * 255)
-                img1.line(segment, fill=(s, 255 - s, 0), width=15)
+                wds_list.append(w_d_s)
+                s = w_d_s * vars.ROAD_TYPE_WEIGHTS[road_type] * traffic_level * vars.RADIUS
+                traffic_sum += w_d_s * vars.ROAD_TYPE_WEIGHTS[road_type] * traffic_level * vars.RADIUS
+                segment_count += 1
+                if s:
+                    s_list.append((s, road_type, traffic_level, w_d_s))
+                s_max = max(s * 255, s_max)
+                s = int(min(s, 1))
+                color = colors.from_level(s)
+
+                # color = vars.ROAD_TYPE_COLORS[road_type]
+                # color = colors.from_level(traffic_level)
+                # width = vars.ROAD_TYPE_WEIGHTS[road_type]*2
+                width = 10
+                img1.line(segment, fill=color, width=width)
         geometries.append(geometry)
         pass
 
     # for feature in traffic_flow_layer.
-    img = img.resize((1024, 1024))
+    img1.point(station, fill=(255, 255, 255))
+    img1.rectangle(((station[0]-20, station[1]-20), (station[0]+20, station[1]+20)), fill=(255, 255, 255))
+    # img = img.resize((2048, 2048))
     img.show()
-    print(tile)
-    print(s_max)
+    fig, ax = plt.subplots(tight_layout=True)
+    # ax.hist([e[0] for e in s_list], bins=10)
+    ax.hist(wds_list, bins=40)
+    plt.show()
+    print(road_types)
+    # print(tile)
+    print(f"{segment_count=}")
+    print(f"{s_max=}")
+    print(f"{traffic_sum=}")

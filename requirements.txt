@@ -1,3 +1,5 @@
 protobuf
 requests
 pyproj
+matplotlib
+Pillow
