@@ -23,7 +23,7 @@ TILE_PIXELS = 4096
 
 
 def to_wsg(x, y):
-    return transformer2.transform(y, x)
+    return transformer2.transform(x, y)
 
 
 def to_3587(lon, lat):
@@ -56,6 +56,23 @@ def mercator_to_tile(x, y, zoom):
     return (num_x / denom_x, num_y / denom_y), (int(tile_x[1]), int(tile_y[1])), (int(TILE_PIXELS*tile_x[0]), int(TILE_PIXELS*tile_y[0]))
 
 
+def tile_to_mercator(tile, zoom):
+    """
+    x axis: T = (M + EQUATOR/2)/denom_x
+            M = T*denom_x - EQUATOR/2
+    y axis: T = (M - EQUATOR/2)/denom_y
+            M = T*denom_y + EQUATOR/2
+    :param tile:
+    :param zoom:
+    :return:
+    """
+    x = tile[0][0]
+    y = tile[0][1]
+    denom_x = EQUATOR / pow(2, zoom)
+    denom_y = EQUATOR / -pow(2, zoom)
+    return x*denom_x - EQUATOR / 2.0, y*denom_y + EQUATOR / 2.0
+
+
 def ___mercator_to_tile(x, y, zoom):
     """
     Converts spherical web mercator to tile pixel X/Y, inverts y coordinates.
@@ -78,6 +95,10 @@ def wsg_to_tile(lon, lat, zoom: int):
     return mercator_to_tile(*to_3587(lon, lat), zoom)
 
 
+def tile_to_wsg(tile, zoom: int):
+    return to_wsg(*tile_to_mercator(tile, zoom))
+
+
 def point_radius_bbox(lon, lat, zoom: int, tile_radius: float):
     tile_coords = wsg_to_tile(lon, lat, zoom)
 
@@ -96,14 +117,21 @@ def meters_to_pixels(meters, zoom) -> int:
 
 
 def meters_to_tile(meters, zoom) -> float:
+    """
+    :param meters:
+    :param zoom: tile zoom
+    :return: 0.0 to 1.0
+    """
     return meters/tile_size(zoom)
 
 
 if __name__ == '__main__':
     print(wsg_to_tile(49.2077883, 16.6135453, 13))
+    lon, lat, zoom = 49.2077883, 16.6135453, 13
+    print(f"{tile_to_wsg(wsg_to_tile(lon, lat, zoom), zoom)=}{lon, lat}")
     print(wsg_to_tile(49.1863633, 16.6516567, 12))
     print(point_radius_bbox(49.1863633, 16.6516567, 13, 500/TILE_PIXELS))
     print(tile_size(13))
     print(meters_to_pixels(4891.97, 13))
     print(meters_to_tile(4891.97, 14))
-    # print(to_3587(49.2077883, 16.6135453))
+    print(to_3587(49.2077883, 16.6135453))
