@@ -9,7 +9,7 @@ from collections import Counter
 import vars
 from vector_math import weighted_distance_sum
 import convert
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 
 
 def get_feature_properties(layer, feature):
@@ -51,7 +51,6 @@ COMMAND_COUNTS_ASSERTS = {
     Command.LineTo: lambda _count: _count > 0,
     Command.ClosePath: lambda _count: _count == 0,
 }
-
 
 COMMAND_STATE_FUNCTION = {
     CommandState.Start: {
@@ -109,15 +108,37 @@ def parse_geometry(geometry):
         yield segment
 
 
+def weight(dist):
+    radius = convert.meters_to_pixels(vars.RADIUS, vars.ZOOM)
+    if dist == 0:
+        return 2
+    window = 1 - min(dist / radius, 1)
+    w = 1 / dist
+    return window * w
+
+
 if __name__ == '__main__':
     # actual = list(parse_geometry([9, 1136, 6564]))
     # expected = [[(568, 3282)]]
     # print(expected)
     # print(actual)
 
-    if len(sys.argv) != 2:
-        print("Usage:", sys.argv[0], "TILE_FILE")
+    color_by_dict = {
+        'wds': 'weighted distance sum',
+        'road_type': 'road type',
+        'total': 'weighted distance sum * road type weight * segment traffic level',
+        'traffic_level': 'segment traffic level'
+    }
+
+    if len(sys.argv) <= 2:
+        print("Usage:", sys.argv[0], f"TILE_FILE [{'|'.join([key for key in color_by_dict])}]")
         sys.exit(-1)
+
+    if len(sys.argv) >= 3 and sys.argv[2] in color_by_dict:
+        color_by = sys.argv[2]
+    else:
+        color_by = 'total'
+    print(f'coloring by {color_by_dict[color_by]}')
 
     tile = tomtom_pb2.Tile()
 
@@ -134,20 +155,10 @@ if __name__ == '__main__':
     img1 = ImageDraw.Draw(img)
     assert traffic_flow_layer["name"] == "Traffic flow"
 
-
-    def weight(dist):
-        radius = convert.meters_to_pixels(vars.RADIUS, vars.ZOOM)
-        if dist == 0:
-            return 2
-        window = 1 - min(dist / radius, 1)
-        w = 1 / dist
-        return window * w
-
-
-    lon, lat = vars.CURRENT_STATION
-    station = convert.wsg_to_tile(lon, lat, vars.ZOOM)[2]
+    # lon, lat = vars.CURRENT_STATION
+    # station = convert.wsg_to_tile(lon, lat, vars.ZOOM)[2]
+    station = 2590, 2578
     print(station)
-    # exit(0)
     s_max = 0
     s_list = []
     wds_list = []
@@ -174,35 +185,57 @@ if __name__ == '__main__':
                 segments.append((shape[point_index], shape[point_index + 1]))
 
             for segment in segments:
-                w_d_s = weighted_distance_sum(station, segment[0], segment[1], weight)
-                wds_list.append(w_d_s)
-                s = w_d_s * vars.ROAD_TYPE_WEIGHTS[road_type] * traffic_level * vars.RADIUS
-                traffic_sum += w_d_s * vars.ROAD_TYPE_WEIGHTS[road_type] * traffic_level * vars.RADIUS
                 segment_count += 1
-                if s:
-                    s_list.append((s, road_type, traffic_level, w_d_s))
-                s_max = max(s * 255, s_max)
-                s = int(min(s, 1))
-                color = colors.from_level(s)
+                if color_by in ['total', 'wds']:
+                    w_d_s = weighted_distance_sum(station, segment[0], segment[1], weight)
+                    wds_list.append(w_d_s)
+                    if color_by == 'total':
+                        s = w_d_s * vars.ROAD_TYPE_WEIGHTS[road_type] * traffic_level * vars.RADIUS
+                        traffic_sum += w_d_s * vars.ROAD_TYPE_WEIGHTS[road_type] * traffic_level * vars.RADIUS
+                        if s:
+                            s_list.append((s, road_type, traffic_level, w_d_s))
+                        s_max = max(s * 255, s_max)
+                        s = int(min(s, 1))
+                        color = colors.from_level(s)
+                    else:
+                        color = colors.from_level(min(w_d_s * 1 / 0.003, 1))
 
-                # color = vars.ROAD_TYPE_COLORS[road_type]
-                # color = colors.from_level(traffic_level)
-                # width = vars.ROAD_TYPE_WEIGHTS[road_type]*2
-                width = 10
+                elif color_by == 'road_type':
+                    # width = vars.ROAD_TYPE_WEIGHTS[road_type]*2
+                    # color = vars.ROAD_TYPE_COLORS[road_type]
+                    color = colors.from_level(vars.ROAD_TYPE_WEIGHTS[road_type]/10)
+                elif color_by == 'traffic_level':
+                    color = colors.from_level(traffic_level)
+                else:
+                    color = colors.WHITE
+                width = 12
                 img1.line(segment, fill=color, width=width)
         geometries.append(geometry)
         pass
 
     # for feature in traffic_flow_layer.
     img1.point(station, fill=(255, 255, 255))
-    img1.rectangle(((station[0]-20, station[1]-20), (station[0]+20, station[1]+20)), fill=(255, 255, 255))
-    # img = img.resize((2048, 2048))
-    img.show()
-    fig, ax = plt.subplots(tight_layout=True)
-    # ax.hist([e[0] for e in s_list], bins=10)
-    ax.hist(wds_list, bins=40)
-    plt.show()
-    print(road_types)
+    r = 20
+    img1.rounded_rectangle(((station[0] - r, station[1] - r), (station[0] + r, station[1] + r)), r,
+                           fill=(255, 255, 255))
+
+    r = convert.meters_to_pixels(vars.RADIUS, vars.ZOOM)
+    img1.rounded_rectangle(((station[0] - r, station[1] - r), (station[0] + r, station[1] + r)), r,
+                           outline=(255, 255, 255), width=5)
+
+    r = r * 2.5
+    img = img.crop((station[0] - r, station[1] - r, station[0] + r, station[1] + r))
+
+    img = img.resize((int(r/2), int(r/2)))
+    img.show(title=color_by)
+
+    # fig, ax = plt.subplots(tight_layout=True)
+    # # # ax.hist([e[0] for e in s_list], bins=10)
+    # ax.hist(wds_list, bins=40)
+    # plt.show()
+    # print(max(wds_list))
+
+    # print(road_types)
     # print(tile)
     print(f"{segment_count=}")
     print(f"{s_max=}")
